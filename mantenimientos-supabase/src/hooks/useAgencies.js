@@ -14,10 +14,10 @@ export function useAgencies() {
     setLoading(true)
     setError(null)
 
-    const { data, error: fetchError } = await supabase
-      .from('agencies')
-      .select('id, slug, title, color, city_id, equipment_items(id, dept, comp, done)')
-      .order('title')
+   const { data, error: fetchError } = await supabase
+  .from('agencies')
+  .select('id, slug, title, color, city_id, cities(nombre), equipment_items(id, dept, comp, done)')
+  .order('title')
 
     if (fetchError) {
       setError(fetchError.message)
