@@ -7,13 +7,40 @@ export default function DashboardPage() {
   const { isTecnico } = useAuth()
   const { agencies, loading, updateItemValue, addOrIncrementEquipment, deleteItem } = useAgencies()
   const schedule = useMaintenanceSchedule()
+
   const [activeAgencyId, setActiveAgencyId] = useState(null)
+  const [activeCityId, setActiveCityId] = useState(null)
   const [scheduleFilter, setScheduleFilter] = useState('pendientes')
 
-  const activeAgency = useMemo(
-    () => agencies.find((a) => a.id === activeAgencyId) || agencies[0],
-    [agencies, activeAgencyId]
+  // Ciudades únicas derivadas de las agencias que el usuario ya puede ver (RLS)
+  const cities = useMemo(() => {
+    const map = new Map()
+    agencies.forEach((a) => {
+      if (a.city_id && a.cities?.nombre) {
+        map.set(a.city_id, { id: a.city_id, nombre: a.cities.nombre })
+      }
+    })
+    return Array.from(map.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [agencies])
+
+  // Ciudad activa: la seleccionada, o la primera disponible por defecto
+  const effectiveCityId = activeCityId || cities[0]?.id
+
+  // Agencias de la ciudad activa (alimenta las pestañas)
+  const cityAgencies = useMemo(
+    () => agencies.filter((a) => a.city_id === effectiveCityId),
+    [agencies, effectiveCityId]
   )
+
+  const activeAgency = useMemo(
+    () => cityAgencies.find((a) => a.id === activeAgencyId) || cityAgencies[0],
+    [cityAgencies, activeAgencyId]
+  )
+
+  function handleCityChange(cityId) {
+    setActiveCityId(cityId)
+    setActiveAgencyId(null) // al cambiar de ciudad, selecciona la primera agencia de esa ciudad
+  }
 
   // ---- KPIs consolidados (respetan lo que RLS ya filtró para este usuario) ----
   const kpis = useMemo(() => {
@@ -56,7 +83,6 @@ export default function DashboardPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-8">
-
       {/* KPIs globales — ya filtrados por RLS según el rol del usuario */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <KpiCard label="Avance Consolidado" value={`${kpis.pct}%`} sub="Suma de agencias visibles" />
@@ -65,10 +91,24 @@ export default function DashboardPage() {
         <KpiCard label="Pendientes de Mes" value={kpis.remaining} sub="Equipos restantes activos" valueClass="text-red-600" />
       </section>
 
-      {/* Tabs de agencias — la lista ya viene acotada por RLS */}
+      {/* Selector de Ciudad */}
+      <div className="flex items-center gap-3">
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ciudad</label>
+        <select
+          value={effectiveCityId || ''}
+          onChange={(e) => handleCityChange(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {cities.map((c) => (
+            <option key={c.id} value={c.id}>{c.nombre}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Tabs de agencias — ahora solo de la ciudad activa */}
       <div className="border-b border-slate-200">
         <nav className="flex flex-wrap gap-6">
-          {agencies.map((a) => (
+          {cityAgencies.map((a) => (
             <button
               key={a.id}
               onClick={() => setActiveAgencyId(a.id)}
@@ -92,6 +132,7 @@ export default function DashboardPage() {
               {agencyTotals.comp} Equipos Registrados
             </span>
           </div>
+
           <div className="overflow-x-auto max-h-[500px]">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
@@ -129,6 +170,7 @@ export default function DashboardPage() {
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col items-center text-center">
           <h3 className="text-base font-bold text-slate-900 uppercase self-start mb-4">Medición de Avance</h3>
+
           <div className="relative flex items-center justify-center my-4">
             <svg className="w-56 h-56 -rotate-90">
               <circle cx="112" cy="112" r="95" stroke="#f1f5f9" strokeWidth="18" fill="transparent" />
@@ -141,6 +183,7 @@ export default function DashboardPage() {
               <span className="text-xs font-bold text-slate-400 uppercase">Completado</span>
             </div>
           </div>
+
           <div className="w-full grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl">
             <div className="text-left">
               <div className="text-xs font-bold text-slate-500 uppercase">Progreso</div>
@@ -166,6 +209,7 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
+
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase bg-slate-50">
