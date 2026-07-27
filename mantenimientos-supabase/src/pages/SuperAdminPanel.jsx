@@ -8,18 +8,23 @@ const ROLES = [
   { value: 'superadmin', label: 'Superadmin' },
 ]
 
+const EMPTY_FORM = {
+  email: '', password: '', nombre: '', rol: 'tecnico', ciudad_id: '', agencias: [],
+}
+
 export default function SuperAdminPanel() {
   const { isSuperadmin, isAdmin } = useAuth()
   const [users, setUsers] = useState([])
   const [cities, setCities] = useState([])
   const [agencies, setAgencies] = useState([])
   const [loading, setLoading] = useState(true)
+
   const [formOpen, setFormOpen] = useState(false)
+  const [formMode, setFormMode] = useState('create') // 'create' | 'edit'
+  const [editingUserId, setEditingUserId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const [form, setForm] = useState({
-    email: '', password: '', nombre: '', rol: 'tecnico', ciudad_id: '', agencias: [],
-  })
+  const [form, setForm] = useState(EMPTY_FORM)
 
   // Solo superadmin y admin pueden ver este panel (el admin ve/gestiona su ciudad)
   if (!isSuperadmin && !isAdmin) {
@@ -45,6 +50,29 @@ export default function SuperAdminPanel() {
 
   useEffect(() => { loadAll() }, [])
 
+  function openCreateForm() {
+    setFormMode('create')
+    setEditingUserId(null)
+    setForm(EMPTY_FORM)
+    setFormError('')
+    setFormOpen(true)
+  }
+
+  function openEditForm(user) {
+    setFormMode('edit')
+    setEditingUserId(user.id)
+    setForm({
+      email: user.email || '',
+      password: '',
+      nombre: user.nombre || '',
+      rol: user.rol || 'tecnico',
+      ciudad_id: user.ciudad_id || '',
+      agencias: user.agencias || [],
+    })
+    setFormError('')
+    setFormOpen(true)
+  }
+
   async function handleCreateUser(e) {
     e.preventDefault()
     setFormError('')
@@ -66,15 +94,46 @@ export default function SuperAdminPanel() {
     })
 
     setSaving(false)
-
     if (error || data?.error) {
       setFormError(data?.error || error.message)
       return
     }
 
     setFormOpen(false)
-    setForm({ email: '', password: '', nombre: '', rol: 'tecnico', ciudad_id: '', agencias: [] })
+    setForm(EMPTY_FORM)
     await loadAll()
+  }
+
+  async function handleUpdateUser(e) {
+    e.preventDefault()
+    setFormError('')
+    setSaving(true)
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        nombre: form.nombre.trim(),
+        rol: form.rol,
+        ciudad_id: form.ciudad_id || null,
+        agencias: form.agencias,
+      })
+      .eq('id', editingUserId)
+
+    setSaving(false)
+    if (error) {
+      setFormError(error.message)
+      return
+    }
+
+    setFormOpen(false)
+    setEditingUserId(null)
+    setForm(EMPTY_FORM)
+    await loadAll()
+  }
+
+  function handleSubmit(e) {
+    if (formMode === 'edit') return handleUpdateUser(e)
+    return handleCreateUser(e)
   }
 
   async function toggleActivo(user) {
@@ -92,7 +151,7 @@ export default function SuperAdminPanel() {
           <p className="text-sm text-slate-500">Crea cuentas y asigna rol, ciudad y agencias permitidas.</p>
         </div>
         <button
-          onClick={() => setFormOpen(true)}
+          onClick={openCreateForm}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
         >
           + Nuevo usuario
@@ -108,11 +167,12 @@ export default function SuperAdminPanel() {
               <th className="py-3 px-6">Ciudad</th>
               <th className="py-3 px-6">Agencias asignadas</th>
               <th className="py-3 px-6 text-center">Estado</th>
+              <th className="py-3 px-6 text-center w-20">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={5} className="py-8 text-center text-slate-400">Cargando…</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-slate-400">Cargando…</td></tr>
             )}
             {!loading && users.map((u) => (
               <tr key={u.id} className="hover:bg-slate-50/80">
@@ -133,6 +193,14 @@ export default function SuperAdminPanel() {
                     {u.activo ? 'Activo' : 'Inactivo'}
                   </button>
                 </td>
+                <td className="py-3 px-6 text-center">
+                  <button
+                    onClick={() => openEditForm(u)}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                  >
+                    Editar
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -141,9 +209,11 @@ export default function SuperAdminPanel() {
 
       {formOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-             onClick={(e) => e.target === e.currentTarget && setFormOpen(false)}>
-          <form onSubmit={handleCreateUser} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Registrar nuevo usuario</h3>
+          onClick={(e) => e.target === e.currentTarget && setFormOpen(false)}>
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
+            <h3 className="text-base font-bold text-slate-900">
+              {formMode === 'edit' ? 'Editar usuario' : 'Registrar nuevo usuario'}
+            </h3>
 
             {formError && (
               <div className="bg-red-50 text-red-700 text-sm font-medium rounded-lg px-3 py-2">{formError}</div>
@@ -152,16 +222,18 @@ export default function SuperAdminPanel() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Correo</label>
-                <input required type="email" value={form.email}
+                <input required type="email" value={form.email} disabled={formMode === 'edit'}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm disabled:text-slate-400 disabled:cursor-not-allowed" />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Contraseña temporal</label>
-                <input required type="text" minLength={8} value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
-              </div>
+              {formMode === 'create' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Contraseña temporal</label>
+                  <input required type="text" minLength={8} value={form.password}
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+                </div>
+              )}
             </div>
 
             <div>
@@ -219,7 +291,7 @@ export default function SuperAdminPanel() {
               </button>
               <button type="submit" disabled={saving}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition">
-                {saving ? 'Creando…' : 'Crear usuario'}
+                {saving ? 'Guardando…' : formMode === 'edit' ? 'Guardar cambios' : 'Crear usuario'}
               </button>
             </div>
           </form>

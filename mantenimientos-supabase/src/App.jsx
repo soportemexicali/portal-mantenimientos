@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -8,6 +8,9 @@ import NotificationBell from './components/NotificationBell'
 
 function TopBar() {
   const { profile, signOut } = useAuth()
+  const navigate = useNavigate()
+  const canManageUsers = profile?.rol === 'superadmin' || profile?.rol === 'admin'
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
@@ -15,7 +18,16 @@ function TopBar() {
           {profile?.nombre} <span className="text-slate-300">·</span>{' '}
           <span className="capitalize font-semibold text-slate-800">{profile?.rol}</span>
         </div>
+
         <div className="flex items-center gap-3">
+          {canManageUsers && (
+            <button
+              onClick={() => navigate('/admin/usuarios')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition"
+            >
+              Administrar usuarios
+            </button>
+          )}
           <NotificationBell />
           <button onClick={signOut} className="text-xs font-semibold text-slate-500 hover:text-red-600 transition">
             Cerrar sesión
@@ -30,7 +42,6 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-
       <Route
         path="/dashboard"
         element={
@@ -40,7 +51,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/usuarios"
         element={
@@ -50,7 +60,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
