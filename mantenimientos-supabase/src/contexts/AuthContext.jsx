@@ -28,24 +28,45 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    // Sesión inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) loadProfile(session.user.id)
-      setLoading(false)
-    })
+    let mounted = true
+
+    async function initAuth() {
+      try {
+        // Obtenemos la sesión inicial de forma síncrona/await para evitar carreras
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (mounted) {
+          setSession(session)
+          if (session?.user) {
+            await loadProfile(session.user.id)
+          }
+        }
+      } catch (err) {
+        console.error("Error al inicializar sesión:", err)
+      } finally {
+        if (mounted) {
+          setLoading(false) // Solo quitamos el loading una vez que TODO cargó
+        }
+      }
+    }
+
+    initAuth()
 
     // Suscripción a cambios de sesión (login, logout, refresh de token)
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: listener } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session)
       if (session?.user) {
-        loadProfile(session.user.id)
+        await loadProfile(session.user.id)
       } else {
         setProfile(null)
       }
+      setLoading(false)
     })
 
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      mounted = false
+      listener?.unsubscribe()
+    }
   }, [loadProfile])
 
   const signIn = (email, password) =>

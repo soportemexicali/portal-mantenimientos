@@ -2,45 +2,35 @@ import { useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useAgencies } from '../hooks/useAgencies'
 import { useMaintenanceSchedule } from '../hooks/useMaintenanceSchedule'
+import RegisterMaintenanceModal from '../components/RegisterMaintenanceModal'
+
+const EMPTY_SCHEDULE_FORM = {
+  agency_id: '', dept: '', fecha: '', cantidad: 1, responsable: '', prioridad: 'media', notas: '',
+}
+const EMPTY_EQUIPMENT_FORM = { agency_id: '', dept: '', qty: 1, done: 0 }
 
 export default function DashboardPage() {
   const { isTecnico } = useAuth()
   const { agencies, loading, updateItemValue, addOrIncrementEquipment, deleteItem } = useAgencies()
   const schedule = useMaintenanceSchedule()
-
   const [activeAgencyId, setActiveAgencyId] = useState(null)
-  const [activeCityId, setActiveCityId] = useState(null)
   const [scheduleFilter, setScheduleFilter] = useState('pendientes')
 
-  // Ciudades únicas derivadas de las agencias que el usuario ya puede ver (RLS)
-  const cities = useMemo(() => {
-    const map = new Map()
-    agencies.forEach((a) => {
-      if (a.city_id && a.cities?.nombre) {
-        map.set(a.city_id, { id: a.city_id, nombre: a.cities.nombre })
-      }
-    })
-    return Array.from(map.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
-  }, [agencies])
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState(EMPTY_SCHEDULE_FORM)
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [scheduleError, setScheduleError] = useState('')
 
-  // Ciudad activa: la seleccionada, o la primera disponible por defecto
-  const effectiveCityId = activeCityId || cities[0]?.id
+  const [equipmentForm, setEquipmentForm] = useState(EMPTY_EQUIPMENT_FORM)
+  const [equipmentSaving, setEquipmentSaving] = useState(false)
+  const [equipmentError, setEquipmentError] = useState('')
 
-  // Agencias de la ciudad activa (alimenta las pestañas)
-  const cityAgencies = useMemo(
-    () => agencies.filter((a) => a.city_id === effectiveCityId),
-    [agencies, effectiveCityId]
-  )
+  const [registerOpen, setRegisterOpen] = useState(false)
 
   const activeAgency = useMemo(
-    () => cityAgencies.find((a) => a.id === activeAgencyId) || cityAgencies[0],
-    [cityAgencies, activeAgencyId]
+    () => agencies.find((a) => a.id === activeAgencyId) || agencies[0],
+    [agencies, activeAgencyId]
   )
-
-  function handleCityChange(cityId) {
-    setActiveCityId(cityId)
-    setActiveAgencyId(null) // al cambiar de ciudad, selecciona la primera agencia de esa ciudad
-  }
 
   // ---- KPIs consolidados (respetan lo que RLS ya filtró para este usuario) ----
   const kpis = useMemo(() => {
@@ -66,6 +56,63 @@ export default function DashboardPage() {
     })
   }, [schedule.items, scheduleFilter])
 
+  function openScheduleModal() {
+    setScheduleError('')
+    setScheduleForm({ ...EMPTY_SCHEDULE_FORM, agency_id: activeAgency?.id || agencies[0]?.id || '' })
+    setScheduleModalOpen(true)
+  }
+
+  async function handleScheduleSubmit(e) {
+    e.preventDefault()
+    setScheduleError('')
+    if (!scheduleForm.agency_id || !scheduleForm.dept.trim() || !scheduleForm.fecha) {
+      setScheduleError('Agencia, departamento y fecha son obligatorios.')
+      return
+    }
+    setScheduleSaving(true)
+    try {
+      await schedule.createSchedule({
+        agency_id: scheduleForm.agency_id,
+        dept: scheduleForm.dept.trim().toUpperCase(),
+        fecha: scheduleForm.fecha,
+        cantidad: parseInt(scheduleForm.cantidad) || 1,
+        responsable: scheduleForm.responsable.trim(),
+        prioridad: scheduleForm.prioridad,
+        notas: scheduleForm.notas.trim(),
+      })
+      setScheduleModalOpen(false)
+      setScheduleForm(EMPTY_SCHEDULE_FORM)
+    } catch (err) {
+      setScheduleError(err.message)
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
+
+  async function handleEquipmentSubmit(e) {
+    e.preventDefault()
+    setEquipmentError('')
+    if (!equipmentForm.agency_id || !equipmentForm.dept.trim()) {
+      setEquipmentError('Agencia y departamento son obligatorios.')
+      return
+    }
+    const qty = parseInt(equipmentForm.qty) || 0
+    const done = parseInt(equipmentForm.done) || 0
+    if (done > qty) {
+      setEquipmentError('El mantenimiento realizado no puede ser mayor que la cantidad de equipos.')
+      return
+    }
+    setEquipmentSaving(true)
+    try {
+      await addOrIncrementEquipment(equipmentForm.agency_id, equipmentForm.dept.trim(), qty, done)
+      setEquipmentForm(EMPTY_EQUIPMENT_FORM)
+    } catch (err) {
+      setEquipmentError(err.message)
+    } finally {
+      setEquipmentSaving(false)
+    }
+  }
+
   if (loading) {
     return <div className="p-10 text-center text-slate-400 text-sm">Cargando dashboard…</div>
   }
@@ -83,6 +130,163 @@ export default function DashboardPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-8">
+
+      {/* Barra de acciones */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Mantenimientos Preventivos</h1>
+          <p className="text-xs text-slate-500 font-medium">Panel de Control de Avances en Agencias</p>
+        </div>
+        <button
+          onClick={openScheduleModal}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
+        >
+          + Agendar Mantenimiento
+        </button>
+      </div>
+
+      {/* Agregar Equipo No Considerado */}
+      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="mb-4 border-b border-slate-100 pb-3">
+          <h2 className="text-base font-bold text-slate-900">Agregar Equipo No Considerado</h2>
+          <p className="text-xs text-slate-500">Registra un nuevo equipo o amplía un departamento existente.</p>
+        </div>
+        {equipmentError && (
+          <div className="bg-red-50 text-red-700 text-sm font-medium rounded-lg px-3 py-2 mb-4">{equipmentError}</div>
+        )}
+        <form onSubmit={handleEquipmentSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Agencia</label>
+            <select
+              value={equipmentForm.agency_id}
+              onChange={(e) => setEquipmentForm((f) => ({ ...f, agency_id: e.target.value }))}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm"
+              required
+            >
+              <option value="">Selecciona…</option>
+              {agencies.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Departamento / Empleado</label>
+            <input
+              type="text" required placeholder="Ej. Ventas, Siniestros…"
+              value={equipmentForm.dept}
+              onChange={(e) => setEquipmentForm((f) => ({ ...f, dept: e.target.value }))}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Cant. Equipos</label>
+            <input
+              type="number" min="1" value={equipmentForm.qty}
+              onChange={(e) => setEquipmentForm((f) => ({ ...f, qty: e.target.value }))}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Manto. Hecho</label>
+            <input
+              type="number" min="0" value={equipmentForm.done}
+              onChange={(e) => setEquipmentForm((f) => ({ ...f, done: e.target.value }))}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm"
+            />
+          </div>
+          <button type="submit" disabled={equipmentSaving}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-sm transition h-[42px]">
+            {equipmentSaving ? 'Guardando…' : '+ Ingresar y Calcular'}
+          </button>
+        </form>
+      </section>
+
+      {/* Modal: Agendar Mantenimiento */}
+      {scheduleModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+             onClick={(e) => e.target === e.currentTarget && setScheduleModalOpen(false)}>
+          <form onSubmit={handleScheduleSubmit} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base font-bold text-slate-900">Agendar Mantenimiento</h3>
+
+            {scheduleError && (
+              <div className="bg-red-50 text-red-700 text-sm font-medium rounded-lg px-3 py-2">{scheduleError}</div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Agencia</label>
+              <select
+                value={scheduleForm.agency_id}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, agency_id: e.target.value }))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" required
+              >
+                <option value="">Selecciona…</option>
+                {agencies.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Departamento / Empleado</label>
+              <input type="text" required placeholder="Ej. Ventas, Siniestros, Taller…"
+                value={scheduleForm.dept}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, dept: e.target.value }))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Fecha Programada</label>
+                <input type="date" required min={new Date().toISOString().split('T')[0]}
+                  value={scheduleForm.fecha}
+                  onChange={(e) => setScheduleForm((f) => ({ ...f, fecha: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Cant. Equipos</label>
+                <input type="number" min="1" value={scheduleForm.cantidad}
+                  onChange={(e) => setScheduleForm((f) => ({ ...f, cantidad: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Responsable / Técnico</label>
+                <input type="text" placeholder="Nombre del técnico"
+                  value={scheduleForm.responsable}
+                  onChange={(e) => setScheduleForm((f) => ({ ...f, responsable: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Prioridad</label>
+                <select value={scheduleForm.prioridad}
+                  onChange={(e) => setScheduleForm((f) => ({ ...f, prioridad: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm">
+                  <option value="baja">Baja</option>
+                  <option value="media">Media</option>
+                  <option value="alta">Alta</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Notas (opcional)</label>
+              <textarea rows={2} value={scheduleForm.notas}
+                onChange={(e) => setScheduleForm((f) => ({ ...f, notas: e.target.value }))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm resize-none" />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setScheduleModalOpen(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2.5 rounded-lg transition">
+                Cancelar
+              </button>
+              <button type="submit" disabled={scheduleSaving}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition">
+                {scheduleSaving ? 'Guardando…' : 'Guardar Programación'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* KPIs globales — ya filtrados por RLS según el rol del usuario */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <KpiCard label="Avance Consolidado" value={`${kpis.pct}%`} sub="Suma de agencias visibles" />
@@ -91,24 +295,10 @@ export default function DashboardPage() {
         <KpiCard label="Pendientes de Mes" value={kpis.remaining} sub="Equipos restantes activos" valueClass="text-red-600" />
       </section>
 
-      {/* Selector de Ciudad */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ciudad</label>
-        <select
-          value={effectiveCityId || ''}
-          onChange={(e) => handleCityChange(e.target.value)}
-          className="bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          {cities.map((c) => (
-            <option key={c.id} value={c.id}>{c.nombre}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Tabs de agencias — ahora solo de la ciudad activa */}
+      {/* Tabs de agencias — la lista ya viene acotada por RLS */}
       <div className="border-b border-slate-200">
         <nav className="flex flex-wrap gap-6">
-          {cityAgencies.map((a) => (
+          {agencies.map((a) => (
             <button
               key={a.id}
               onClick={() => setActiveAgencyId(a.id)}
@@ -128,11 +318,18 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
             <h3 className="text-base font-bold text-slate-900 uppercase">{activeAgency?.title}</h3>
-            <span className="px-2.5 py-1 bg-slate-100 text-slate-800 text-xs font-bold rounded-full">
-              {agencyTotals.comp} Equipos Registrados
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setRegisterOpen(true)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+              >
+                + Registrar Mantenimiento
+              </button>
+              <span className="px-2.5 py-1 bg-slate-100 text-slate-800 text-xs font-bold rounded-full">
+                {agencyTotals.comp} Equipos Registrados
+              </span>
+            </div>
           </div>
-
           <div className="overflow-x-auto max-h-[500px]">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
@@ -170,7 +367,6 @@ export default function DashboardPage() {
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col items-center text-center">
           <h3 className="text-base font-bold text-slate-900 uppercase self-start mb-4">Medición de Avance</h3>
-
           <div className="relative flex items-center justify-center my-4">
             <svg className="w-56 h-56 -rotate-90">
               <circle cx="112" cy="112" r="95" stroke="#f1f5f9" strokeWidth="18" fill="transparent" />
@@ -183,7 +379,6 @@ export default function DashboardPage() {
               <span className="text-xs font-bold text-slate-400 uppercase">Completado</span>
             </div>
           </div>
-
           <div className="w-full grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl">
             <div className="text-left">
               <div className="text-xs font-bold text-slate-500 uppercase">Progreso</div>
@@ -209,7 +404,6 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
-
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase bg-slate-50">
@@ -251,6 +445,14 @@ export default function DashboardPage() {
           </tbody>
         </table>
       </section>
+
+      {/* Modal: Registrar Mantenimiento (con fotos Antes/Después + PPTX automático) */}
+      <RegisterMaintenanceModal
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+        agencies={agencies}
+        defaultAgencyId={activeAgency?.id}
+      />
     </main>
   )
 }
@@ -276,3 +478,4 @@ function Counter({ value, onChange }) {
     </td>
   )
 }
+
