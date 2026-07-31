@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabaseClient'
 
 // Redirige según el rol una vez que el perfil está cargado.
+// Se llama después de un login exitoso (App.jsx también protege rutas por rol).
 function routeForRole(rol) {
   if (rol === 'superadmin') return '/admin/usuarios'
   if (rol === 'admin') return '/dashboard'
@@ -24,45 +24,26 @@ export default function Login() {
     setError('')
     setLoading(true)
 
-    try {
-      // 1. Intentar iniciar sesión
-      const { data, error: signInError } = await signIn(email.trim(), password)
+    const { data, error: signInError } = await signIn(email.trim(), password)
 
-      if (signInError) {
-        setError(
-          signInError.message === 'Invalid login credentials'
-            ? 'Correo o contraseña incorrectos.'
-            : signInError.message
-        )
-        setLoading(false)
-        return
-      }
-
-      // 2. Buscar el rol de forma segura
-      let userRole = 'tecnico' // Valor por defecto por si falla el perfil
-      if (data?.user?.id) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('rol')
-          .eq('id', data.user.id)
-          .single()
-
-        if (!profileError && profile?.rol) {
-          userRole = profile.rol
-        }
-      }
-
-      // 3. Redirigir
-      const redirectTo = location.state?.from?.pathname || routeForRole(userRole)
-      navigate(redirectTo, { replace: true })
-
-    } catch (err) {
-      console.error("Error inesperado en el login:", err)
-      setError('Ocurrió un error inesperado al iniciar sesión.')
-    } finally {
-      // GARANTIZA que el botón vuelva a la normalidad pase lo que pase
+    if (signInError) {
       setLoading(false)
+      setError(
+        signInError.message === 'Invalid login credentials'
+          ? 'Correo o contraseña incorrectos.'
+          : signInError.message
+      )
+      return
     }
+
+    // Buscamos el rol recién autenticado para decidir a dónde mandarlo
+    const { data: profile } = await import('../lib/supabaseClient').then(({ supabase }) =>
+      supabase.from('profiles').select('rol').eq('id', data.user.id).single()
+    )
+
+    setLoading(false)
+    const redirectTo = location.state?.from?.pathname || routeForRole(profile?.rol)
+    navigate(redirectTo, { replace: true })
   }
 
   return (
