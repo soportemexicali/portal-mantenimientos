@@ -21,15 +21,12 @@ function TopBar() {
         </div>
 
         <div className="flex items-center gap-3">
-<<<<<<< HEAD
           <button
             onClick={() => navigate('/historial')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
           >
             Historial Completo
           </button>
-=======
->>>>>>> f61b54a59a5544c28c81c4e8f74d87a5de28bea9
           {canManageUsers && (
             <button
               onClick={() => navigate('/admin/usuarios')}
@@ -61,7 +58,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-<<<<<<< HEAD
       <Route
         path="/historial"
         element={
@@ -71,8 +67,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-=======
->>>>>>> f61b54a59a5544c28c81c4e8f74d87a5de28bea9
       <Route
         path="/admin/usuarios"
         element={
