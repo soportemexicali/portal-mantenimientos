@@ -3,7 +3,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import SuperAdminPanel from './pages/SuperAdminPanel'
-import DashboardPage from './pages/DashboardPage' // ver README: envuelve tu dashboard existente
+import DashboardPage from './pages/DashboardPage'
+import MaintenanceHistoryPage from './pages/MaintenanceHistoryPage'
 import NotificationBell from './components/NotificationBell'
 
 function TopBar() {
@@ -20,6 +21,12 @@ function TopBar() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/historial')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
+          >
+            Historial Completo
+          </button>
           {canManageUsers && (
             <button
               onClick={() => navigate('/admin/usuarios')}
@@ -48,6 +55,15 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['superadmin', 'admin', 'tecnico']}>
             <TopBar />
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/historial"
+        element={
+          <ProtectedRoute allowedRoles={['superadmin', 'admin', 'tecnico']}>
+            <TopBar />
+            <MaintenanceHistoryPage />
           </ProtectedRoute>
         }
       />

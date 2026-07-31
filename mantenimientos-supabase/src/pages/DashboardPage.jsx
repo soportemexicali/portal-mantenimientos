@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useAgencies } from '../hooks/useAgencies'
 import { useMaintenanceSchedule } from '../hooks/useMaintenanceSchedule'
 import RegisterMaintenanceModal from '../components/RegisterMaintenanceModal'
+import AdminOverviewSection from '../components/AdminOverviewSection'
+import MaintenanceHistoryTable from '../components/MaintenanceHistoryTable'
 
 const EMPTY_SCHEDULE_FORM = {
   agency_id: '', dept: '', fecha: '', cantidad: 1, responsable: '', prioridad: 'media', notas: '',
@@ -446,6 +448,21 @@ export default function DashboardPage() {
         </table>
       </section>
 
+      {/* Módulo de historial y métricas — distinto según el rol */}
+      {!isTecnico && <AdminOverviewSection kpis={kpis} />}
+
+      {isTecnico && (
+        <MaintenanceHistoryTable
+          agencyId={null}
+          onlyMine
+          limit={15}
+          showExport={false}
+          compact
+          title="Mis Últimos Mantenimientos"
+          subtitle="Tus 15 registros más recientes. Usa 'Historial Completo' arriba para ver todo."
+        />
+      )}
+
       {/* Modal: Registrar Mantenimiento (con fotos Antes/Después + PPTX automático) */}
       <RegisterMaintenanceModal
         open={registerOpen}
@@ -478,4 +495,3 @@ function Counter({ value, onChange }) {
     </td>
   )
 }
-
