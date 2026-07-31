@@ -1,0 +1,28 @@
+plugins = []
+headers = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "/workspaces/portal-mantenimientos/mantenimientos-supabase/dist"
+publishOrigin = "config"
+commandOrigin = "config"
+base = "/workspaces/portal-mantenimientos/mantenimientos-supabase"
+command = "npm run build"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
