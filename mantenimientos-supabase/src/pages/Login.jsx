@@ -23,10 +23,12 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
+    console.log("1. Intentando iniciar sesión...")
 
     const { data, error: signInError } = await signIn(email.trim(), password)
 
     if (signInError) {
+      console.log("Error en signIn:", signInError)
       setLoading(false)
       setError(
         signInError.message === 'Invalid login credentials'
@@ -36,14 +38,31 @@ export default function Login() {
       return
     }
 
-    // Buscamos el rol recién autenticado para decidir a dónde mandarlo
-    const { data: profile } = await import('../lib/supabaseClient').then(({ supabase }) =>
-      supabase.from('profiles').select('rol').eq('id', data.user.id).single()
-    )
+    console.log("2. Sesión iniciada con éxito. Buscando perfil para user ID:", data.user.id)
 
-    setLoading(false)
-    const redirectTo = location.state?.from?.pathname || routeForRole(profile?.rol)
-    navigate(redirectTo, { replace: true })
+    try {
+      const { data: profile, error: profileError } = await import('../lib/supabaseClient').then(({ supabase }) =>
+        supabase.from('profiles').select('rol').eq('id', data.user.id).single()
+      )
+
+      if (profileError) {
+        console.log("Error al buscar perfil:", profileError)
+      } else {
+        console.log("3. Perfil encontrado:", profile)
+      }
+
+      setLoading(false)
+      const rolEncontrado = profile?.rol || 'tecnico'
+      const redirectTo = location.state?.from?.pathname || routeForRole(rolEncontrado)
+      
+      console.log("4. Redirigiendo a:", redirectTo)
+      navigate(redirectTo, { replace: true })
+
+    } catch (err) {
+      console.log("Excepción al buscar perfil:", err)
+      setLoading(false)
+      navigate('/dashboard')
+    }
   }
 
   return (
