@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
+import SendNotificationModal from '../components/SendNotificationModal'
 
 const ROLES = [
   { value: 'tecnico', label: 'Técnico' },
@@ -25,6 +26,8 @@ export default function SuperAdminPanel() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [form, setForm] = useState(EMPTY_FORM)
+
+  const [notifyOpen, setNotifyOpen] = useState(false)
 
   // Solo superadmin y admin pueden ver este panel (el admin ve/gestiona su ciudad)
   if (!isSuperadmin && !isAdmin) {
@@ -150,12 +153,20 @@ export default function SuperAdminPanel() {
           <h1 className="text-xl font-bold text-slate-900">Panel de Administración de Usuarios</h1>
           <p className="text-sm text-slate-500">Crea cuentas y asigna rol, ciudad y agencias permitidas.</p>
         </div>
-        <button
-          onClick={openCreateForm}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
-        >
-          + Nuevo usuario
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setNotifyOpen(true)}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg shadow-sm transition"
+          >
+            🔔 Enviar Notificación
+          </button>
+          <button
+            onClick={openCreateForm}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
+          >
+            + Nuevo usuario
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -297,6 +308,9 @@ export default function SuperAdminPanel() {
           </form>
         </div>
       )}
+
+      {/* Modal: Enviar Notificación */}
+      <SendNotificationModal open={notifyOpen} onClose={() => setNotifyOpen(false)} agencies={agencies} />
     </div>
   )
 }
