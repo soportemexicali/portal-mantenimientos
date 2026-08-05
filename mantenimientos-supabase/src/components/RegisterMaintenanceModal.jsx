@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { generateMaintenancePptx } from '../lib/generateMaintenancePptx'
 
@@ -16,12 +16,16 @@ async function uploadPhoto(file, agencyId, dept, label, index) {
   return data.publicUrl
 }
 
+function formatFechaCorta(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 function PhotoPicker({ label, files, onChange, accentClass }) {
   function handleFiles(e) {
     const nuevos = Array.from(e.target.files || [])
     const combinados = [...files, ...nuevos].slice(0, MAX_FOTOS)
     onChange(combinados)
-    e.target.value = '' // permite volver a elegir el mismo archivo si lo quita y lo vuelve a agregar
+    e.target.value = ''
   }
 
   function removeAt(index) {
@@ -78,11 +82,43 @@ export default function RegisterMaintenanceModal({ open, onClose, agencies, defa
   const [fotosDespues, setFotosDespues] = useState([])
   const [cantidad, setCantidad] = useState(1)
 
+  // Pendientes agendados que coinciden con la agencia + departamento elegidos
+  const [scheduleOptions, setScheduleOptions] = useState([])
+  const [scheduleId, setScheduleId] = useState('')
+  const [loadingSchedule, setLoadingSchedule] = useState(false)
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const selectedAgency = useMemo(() => agencies.find((a) => a.id === agencyId), [agencies, agencyId])
   const deptOptions = selectedAgency?.equipment_items.map((i) => i.dept) ?? []
+
+  // Cada vez que cambia agencia o departamento, recarga los pendientes
+  // específicos que coinciden — así el técnico ve exactamente cuáles hay
+  // (evita adivinar o completar el que no es).
+  useEffect(() => {
+    setScheduleId('')
+    const deptTrimmed = dept.trim()
+    if (!agencyId || !deptTrimmed) {
+      setScheduleOptions([])
+      return
+    }
+    let active = true
+    setLoadingSchedule(true)
+    supabase
+      .from('maintenance_schedule')
+      .select('id, fecha, responsable, cantidad')
+      .eq('agency_id', agencyId)
+      .eq('dept', deptTrimmed.toUpperCase())
+      .eq('completado', false)
+      .order('fecha', { ascending: true })
+      .then(({ data, error: fetchError }) => {
+        if (!active) return
+        setScheduleOptions(fetchError ? [] : (data ?? []))
+        setLoadingSchedule(false)
+      })
+    return () => { active = false }
+  }, [agencyId, dept])
 
   if (!open) return null
 
@@ -92,6 +128,8 @@ export default function RegisterMaintenanceModal({ open, onClose, agencies, defa
     setFotosAntes([])
     setFotosDespues([])
     setCantidad(1)
+    setScheduleId('')
+    setScheduleOptions([])
     setError('')
   }
 
@@ -110,13 +148,11 @@ export default function RegisterMaintenanceModal({ open, onClose, agencies, defa
 
     setSaving(true)
     try {
-      // 1. Subir todas las fotos en paralelo (hasta 6 en total)
       const [urlsAntes, urlsDespues] = await Promise.all([
         Promise.all(fotosAntes.map((f, i) => uploadPhoto(f, agencyId, dept, 'antes', i))),
         Promise.all(fotosDespues.map((f, i) => uploadPhoto(f, agencyId, dept, 'despues', i))),
       ])
 
-      // 2. Registrar de forma atómica (suma equipo + completa pendiente agendado)
       const { error: rpcError } = await supabase.rpc('register_maintenance_with_photos', {
         p_agency_id: agencyId,
         p_dept: dept,
@@ -124,10 +160,10 @@ export default function RegisterMaintenanceModal({ open, onClose, agencies, defa
         p_fotos_antes: urlsAntes,
         p_fotos_despues: urlsDespues,
         p_cantidad: Number(cantidad) || 1,
+        p_schedule_id: scheduleId || null,
       })
       if (rpcError) throw rpcError
 
-      // 3. Generar y descargar el PPTX (usa los archivos en memoria)
       await generateMaintenancePptx({
         agencyTitle: selectedAgency?.title || '',
         dept: dept.toUpperCase(),
@@ -184,6 +220,33 @@ export default function RegisterMaintenanceModal({ open, onClose, agencies, defa
             </datalist>
           </div>
         </div>
+
+        {/* Selector de pendiente específico — evita completar de más */}
+        {(loadingSchedule || scheduleOptions.length > 0) && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
+              ¿Corresponde a un mantenimiento agendado específico?
+            </label>
+            <select
+              value={scheduleId}
+              onChange={(e) => setScheduleId(e.target.value)}
+              disabled={loadingSchedule}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">No — es un registro nuevo (no estaba agendado)</option>
+              {scheduleOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Agendado {formatFechaCorta(s.fecha)} · {s.responsable || 'sin responsable'} · {s.cantidad} equipo(s)
+                </option>
+              ))}
+            </select>
+            {scheduleOptions.length > 1 && !scheduleId && (
+              <p className="text-[11px] text-amber-600 mt-1">
+                Hay {scheduleOptions.length} pendientes para este departamento — elige a cuál corresponde este registro para no completar el equivocado.
+              </p>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Cantidad de equipos</label>
